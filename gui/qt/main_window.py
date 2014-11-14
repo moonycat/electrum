@@ -921,11 +921,11 @@ class ElectrumWindow(QMainWindow):
         grid.addWidget(self.fee_e_help, 5, 3)
         self.update_fee_edit()
         self.send_button = EnterButton(_("Send"), self.do_send)
-        grid.addWidget(self.send_button, 7, 1)
+        grid.addWidget(self.send_button, 6, 1)
         b = EnterButton(_("Clear"), self.do_clear)
-        grid.addWidget(b, 7, 2)
+        grid.addWidget(b, 6, 2)
         self.payto_sig = QLabel('')
-        grid.addWidget(self.payto_sig, 8, 0, 1, 4)
+        grid.addWidget(self.payto_sig, 7, 0, 1, 4)
         w.setLayout(grid)
 
         def on_shortcut():
