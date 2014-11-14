@@ -31,11 +31,11 @@ class Plugin(BasePlugin):
         self.time_e = QDateTimeEdit()
         self.time_e.setMinimumDateTime(QDateTime.currentDateTime().addSecs(3600))
         self.time_help = HelpButton('Schedule a transaction.' + '\n\n' + 'Set time for a transaction.')
-        self.new_send_button = EnterButton('Send', self.do_schedule)
+        #self.new_send_button = EnterButton('Send', self.do_schedule)
         self.win.send_grid.addWidget(self.lable_time, 6, 0)
         self.win.send_grid.addWidget(self.time_e, 6, 1, 1, 2)
         self.win.send_grid.addWidget(self.time_help, 6, 3)
-        self.win.send_grid.addWidget(self.new_send_button, 7, 1)
+        #self.win.send_grid.addWidget(self.new_send_button, 7, 1)
 
     def do_schedule(self):
         pass
