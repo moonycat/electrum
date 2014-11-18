@@ -24,8 +24,8 @@ class Plugin(BasePlugin):
         self.win.payto_sig.hide()
         self.win.send_grid.itemAtPosition(6, 2).widget().hide()
         self.add_time_edit()
-        #self.add_schedule_table()
-        self.add_schedule_widget()
+        self.add_schedule_table()
+        #self.add_schedule_widget()
         self.win.update_status()
 
     def close(self):
@@ -65,11 +65,13 @@ class Plugin(BasePlugin):
         self.win.send_grid.addWidget(self.new_send_button, 7, 1, Qt.AlignLeft)
         self.win.send_grid.addWidget(self.new_clear_button, 7, 2, Qt.AlignLeft)
 
-        def add_schedule_table(self):
-            model = QSqlTableModel()
-            self.initializeModel(model)
-            view = self.createView("Saved Schedule", model)
-            view.show()
+    def add_schedule_table(self):
+        db = QSqlDatabase.addDatabase("SQLITE")
+        db.setDatabaseName("schedule.db")
+        model = QSqlTableModel()
+        self.initializeModel(model)
+        view = self.createView("Saved Schedule", model)
+        view.show()
 
     def add_schedule_widget(self):
         self.win.send_grid.setRowStretch(8, 1)
@@ -115,13 +117,15 @@ class Plugin(BasePlugin):
         self.schedule_requests = self.wallet.storage.get('schedule_requests',{}) 
         self.schedule_requests[time] = (amount, fee, addr)
         self.wallet.storage.put('schedule_requests', self.schedule_requests)
+        self.update_schedule_table()
 
-        #conn = sqlite3.connect('schedule.db')
-        #c = conn.cursor()
-        #c.execute("DROP TABLE IF EXISTS list;")
-        #c.execute("CREATE TABLE IF NOT EXISTS list (timestamp, amount, fee, address, info);")
-        #c.execute("INSERT INTO list VALUES (?, ?, ?, ?, ?);", (time, amount, fee, address))
-        #conn.close()
+        self.conn = sqlite3.connect('schedule.db')
+        c = conn.cursor()
+        c.execute("DROP TABLE IF EXISTS list;")
+        c.execute("CREATE TABLE IF NOT EXISTS list (timestamp, amount, fee, address, info);")
+        c.execute("INSERT INTO list VALUES (?, ?, ?, ?, ?);", (time, amount, fee, address))
+        #c.commit()
+        conn.close()
 
     def schedule_item(self, item):
         if item is None:
@@ -136,7 +140,7 @@ class Plugin(BasePlugin):
         #menu.addAction(_("Delete"), lambda: self.schedule_list_list_delete(item))
         menu.exec_(self.schedule_list.viewport().mapToGlobal(position))
 
-    def update_schedule_tab(self):
+    def update_schedule_table(self):
         self.schedule_requests = self.wallet.storage.get('schedule_requests',{}) 
         b = len(self.schedule_requests) > 0
         self.schedule_list.setVisible(b)
