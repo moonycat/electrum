@@ -3,12 +3,13 @@ from PyQt4.QtCore import *
 from PyQt4 import QtSql
 
 from electrum.i18n import _, set_language
+from electrum import Transaction
 from electrum.plugins import BasePlugin, hook
 from gui.qt.util import HelpButton, EnterButton
 
 import sqlite3
-import threading
-import time
+import threading, time
+import sys, traceback
 
 class Plugin(BasePlugin):
 
@@ -61,7 +62,7 @@ class Plugin(BasePlugin):
         self.group.addButton(self.schedule_r) 
         self.instant_r.setChecked(True)
         self.time_e = QDateTimeEdit()
-        self.time_e.setMinimumDateTime(QDateTime.currentDateTime().addSecs(300))
+        self.time_e.setMinimumDateTime(QDateTime.currentDateTime().addSecs(60))
         self.time_help = HelpButton(_('Schedule a transaction.') + '\n\n' + _('Set time for a transaction.'))
         self.new_send_button = EnterButton(_('Send'), self.read_send_tab)
         self.new_clear_button = EnterButton(_('Clear'), self.win.do_clear)
@@ -100,9 +101,9 @@ class Plugin(BasePlugin):
 
     def do_schedule(self):
         r = self.win.read_send_tab()
-        print r[0], r[1], r[2]
         if not r:
             return
+        #print 'do schedule:', r[2]
 
         now = QDateTime.currentDateTime()
         t = now.secsTo(self.time_e.dateTime())
@@ -118,7 +119,7 @@ class Plugin(BasePlugin):
         conn = sqlite3.connect('/tmp/schedule.db')
         c = conn.cursor()
         #c.execute("DROP TABLE IF EXISTS list;")
-        c.execute("CREATE TABLE IF NOT EXISTS list (timestamp INTEGER, amount REAL, fee REAL, address TEXT);")
+        c.execute("CREATE TABLE IF NOT EXISTS list (timestamp INTEGER, amount INTEGER, fee INTEGER, address TEXT);")
         c.execute("INSERT INTO list VALUES (?, ?, ?, ?);", (time, amount, fee, addr))
         conn.commit()
         conn.close()
@@ -133,9 +134,8 @@ class Plugin(BasePlugin):
         while n:
             for row in c.execute('SELECT * FROM list'):
                 if row[0] < time.time():
-                    self.do_send(row[1], row[2], row[3])
                     pass
-            time.sleep(5)
+            time.sleep(3000)
         conn.commit()
         conn.close()
 
@@ -143,30 +143,7 @@ class Plugin(BasePlugin):
         outputs = ('address', str(addr), amount)
         label = ''
         coins = self.win.get_coins()
-        print outputs, label, fee, coins
-        '''try:
-            tx = self.wallet.make_unsigned_transaction(outputs, fee, None, coins = coins)
-            tx.error = None
-        except Exception as e:
-            traceback.print_exc(file=sys.stdout)
-            self.win.show_message(str(e))
-            return
-
-        if tx.requires_fee(self.wallet.verifier) and tx.get_fee() < MIN_RELAY_TX_FEE:
-            QMessageBox.warning(self, _('Error'), _("This transaction requires a higher fee, or it will not be propagated by the network."), _('OK'))
-            return
-
-        if not self.win.config.get('can_edit_fees', False):
-            if not self.win.question(_("A fee of %(fee)s will be added to this transaction.\nProceed?")%{ 'fee' : self.win.format_amount(fee) + ' '+ self.win.base_unit()}):
-                return
-        else:
-            confirm_fee = self.win.config.get('confirm_fee', 100000)
-            if fee >= confirm_fee:
-                if not self.win.question(_("The fee for this transaction seems unusually high.\nAre you really sure you want to pay %(fee)s in fees?")%{ 'fee' : self.win.format_amount(fee) + ' '+ self.win.base_unit()}):
-                    return
-
-        self.send_tx(tx, label)'''
-
+        print outputs, label, fee
 
     def initialize_model(self, model):
         model.setTable("list")
