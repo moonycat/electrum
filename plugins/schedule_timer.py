@@ -77,7 +77,7 @@ class Plugin(BasePlugin):
         conn = sqlite3.connect('/tmp/schedule.db')
         c = conn.cursor()
         #c.execute("DROP TABLE IF EXISTS list;")
-        c.execute("CREATE TABLE IF NOT EXISTS list (timestamp INTEGER, amount INTEGER, fee INTEGER, address TEXT);")
+        c.execute("CREATE TABLE IF NOT EXISTS list (n INTEGER PRIMARY KEY, timestamp INTEGER, datetime TEXT, amount INTEGER, fee INTEGER, address TEXT);")
         conn.commit()
         conn.close()
         self.label_request = QLabel(_('Saved Schedule'))
@@ -95,27 +95,25 @@ class Plugin(BasePlugin):
     def check_schedule(self):
         conn = sqlite3.connect('/tmp/schedule.db')
         c = conn.cursor()
-        i = 0
+        self.i = 0
         self.timer = []
-        for row in c.execute('SELECT * FROM list'):
-                t = row[0] - time.time()
+        for row in list(c.execute('SELECT * FROM list')):
+                t = row[1] - time.time()
                 if t < 0:
-                    print 't<0', row[0], row[1], row[2], row[3]
-                    if not self.win.question("A transaction to '" + str(row[3]) + "' with amount " + str(row [1]) + " (satoshis) has expired.\n\nDo you want to send it now?\n\nIf you choose 'No', the transaction will be deleted."):
-                        c.execute('DELETE FROM list WHERE timestamp=(?)', (row[0],))
+                    if not self.win.question("A transaction to '" + str(row[5]) + "' with amount " + str(row [3]) + " (satoshis) has expired.\n\nDo you want to send it now?\n\nIf you choose 'No', the transaction will be deleted."):
+                        c.execute('DELETE FROM list WHERE n=(?)', (row[0],))
                     else:
-                        timerCallback = functools.partial(self.onTimer, row[1], row[2], row[3])
                         self.timer.append(QTimer())
-                        print 't<0, now', row[0], row[1], row[2], row[3], int(time.time()), self.timer[i]
-                        self.timer[i].singleShot(3000, timerCallback)
-                if t >= 0:
-                    timerCallback = functools.partial(self.onTimer, row[1], row[2], row[3])
-                    self.timer.append(QTimer())
-                    print 't>0', row[0], row[1], row[2], row[3], int(time.time()), self.timer[i]
-                    self.timer[i].singleShot(int(t)*1000, timerCallback)
-                i = i + 1
+                        timerCallback = functools.partial(self.onTimer, row[3], row[4], row[5])
+                        self.timer[self.i].singleShot(60000, timerCallback)
+                        print self.i, len(self.timer)
+                        self.i = self.i + 1
+
         conn.commit()
         conn.close()
+        self.label_request.hide()
+        self.view.hide()
+        self.add_schedule_table()
 
     def onTimer(self, amount, fee, addr):
         self.do_send(amount, fee, addr)
@@ -134,33 +132,39 @@ class Plugin(BasePlugin):
         r = self.win.read_send_tab()
         if not r:
             return
-        print r[0], type(r[0])
+
         now = QDateTime.currentDateTime()
         t = self.time_e.dateTime()
         if t < now:
             QMessageBox.warning(None, _('Error'), "The time you selected has passed.\n\nPlease modify the time before re-scheduling.", _('OK'))
             return
 
-        time = self.time_e.dateTime().toTime_t()
+        time_stamp = t.toTime_t()
+        time_datetime = t.toPyDateTime().strftime("%Y-%m-%d %H:%M:%S")
         amount = self.win.amount_e.get_amount()
         fee = self.win.fee_e.get_amount()
         addr = self.win.payto_e.get_outputs()[0][1]
 
         conn = sqlite3.connect('/tmp/schedule.db')
         c = conn.cursor()
-        c.execute("INSERT INTO list VALUES (?, ?, ?, ?);", (time, amount, fee, addr))
+        c.execute("INSERT INTO list VALUES (?, ?, ?, ?, ?, ?);", (None, time_stamp, time_datetime, amount, fee, addr))
         conn.commit()
         conn.close()
+        self.timer.append(QTimer())
+        timerCallback = functools.partial(self.onTimer, amount, fee, addr)
+        time_sec = time_stamp- time.time()
+        self.timer[self.i].singleShot(int(time_sec)*1000, timerCallback)
+        print self.i, len(self.timer)
+        self.i = self.i + 1
         self.label_request.hide()
         self.view.hide()
         self.add_schedule_table()
-        self.check_schedule()
 
     def do_send(self, amount, fee, addr):
         outputs = [('address', str(addr), amount)]
         label = ''
         coins = self.win.get_coins()
-        print outputs, label, fee
+        print outputs
         try:
             tx = self.wallet.make_unsigned_transaction(outputs, fee, None, coins = coins)
             tx.error = None
@@ -188,17 +192,21 @@ class Plugin(BasePlugin):
         model.setTable("list")
         model.setEditStrategy(QtSql.QSqlTableModel.OnManualSubmit)
         model.select()
-        model.setHeaderData(0, Qt.Horizontal, "Date (Timestamp)")
-        model.setHeaderData(1, Qt.Horizontal, "Amount (Satoshis)")
-        model.setHeaderData(2, Qt.Horizontal, "Fee  (Satoshis)")
-        model.setHeaderData(3, Qt.Horizontal, "Address")
+        model.setHeaderData(0, Qt.Horizontal, "")
+        model.setHeaderData(1, Qt.Horizontal, "Timestamp")
+        model.setHeaderData(2, Qt.Horizontal, "Date")
+        model.setHeaderData(3, Qt.Horizontal, "Amount (Satoshis)")
+        model.setHeaderData(4, Qt.Horizontal, "Fee (Satoshis)")
+        model.setHeaderData(5, Qt.Horizontal, "Address")
 
     def create_view(self, model):
         view = QTableView()
         view.setModel(model)
-        view.setColumnWidth(0, 170)
-        view.setColumnWidth(1, 150)
-        view.setColumnWidth(2, 150)
+        view.hideColumn(0)
+        view.hideColumn(1)
+        view.setColumnWidth(2, 170)
+        view.setColumnWidth(3, 150)
+        view.setColumnWidth(4, 150)
         view.horizontalHeader().setStretchLastSection(True)
         return view
 
