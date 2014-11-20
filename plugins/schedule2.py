@@ -3,7 +3,7 @@ from PyQt4.QtCore import *
 from PyQt4 import QtSql
 
 from electrum.i18n import _, set_language
-from electrum import Transaction
+from electrum import SimpleConfig, Transaction
 from electrum.plugins import BasePlugin, hook
 from gui.qt.util import HelpButton, EnterButton
 
@@ -143,7 +143,29 @@ class Plugin(BasePlugin):
         outputs = ('address', str(addr), amount)
         label = ''
         coins = self.win.get_coins()
-        print outputs, label, fee
+        #print outputs, label, fee
+         try:
+            tx = self.wallet.make_unsigned_transaction(outputs, fee, None, coins = coins)
+            tx.error = None
+        except Exception as e:
+            traceback.print_exc(file=sys.stdout)
+            self.win.show_message(str(e))
+            return
+
+        if tx.requires_fee(self.wallet.verifier) and tx.get_fee() < MIN_RELAY_TX_FEE:
+            QMessageBox.warning(self, _('Error'), _("This transaction requires a higher fee, or it will not be propagated by the network."), _('OK'))
+            return
+
+        if not self.config.get('can_edit_fees', False):
+            if not self.question(_("A fee of %(fee)s will be added to this transaction.\nProceed?")%{ 'fee' : self.win.format_amount(fee) + ' '+ self.win.base_unit()}):
+                return
+        else:
+            confirm_fee = self.config.get('confirm_fee', 100000)
+            if fee >= confirm_fee:
+                if not self.win.question(_("The fee for this transaction seems unusually high.\nAre you really sure you want to pay %(fee)s in fees?")%{ 'fee' : self.win.format_amount(fee) + ' '+ self.win.base_unit()}):
+                    return
+
+        self.win.send_tx(tx, label)
 
     def initialize_model(self, model):
         model.setTable("list")
