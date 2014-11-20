@@ -7,6 +7,8 @@ from electrum.plugins import BasePlugin, hook
 from gui.qt.util import HelpButton, EnterButton
 
 import sqlite3
+import threading
+import time
 
 class Plugin(BasePlugin):
 
@@ -15,6 +17,10 @@ class Plugin(BasePlugin):
 
     def description(self):
         return """Provide function to schedule a transaction"""
+
+    @hook
+    def load_wallet(self, wallet):
+        self.wallet = wallet
 
     @hook
     def init_qt(self, gui):
@@ -26,6 +32,10 @@ class Plugin(BasePlugin):
         self.add_time_edit()
         self.add_schedule_table()
         self.win.update_status()
+        threads = []
+        t = threading.Thread(target=self.worker)
+        threads.append(t)
+        t.start()
 
     def close(self):
         self.lable_time.hide()
@@ -36,7 +46,7 @@ class Plugin(BasePlugin):
         self.new_send_button.hide()
         self.new_clear_button.hide()
         self.label_request.hide()
-        self.schedule_list.hide()
+        self.view.hide()
         self.win.send_button.show()
         self.win.payto_sig.show()
         self.win.send_grid.itemAtPosition(6, 2).widget().show()
@@ -67,15 +77,16 @@ class Plugin(BasePlugin):
     def add_schedule_table(self):
         self.win.send_grid.setRowStretch(8, 1)
         self.label_request = QLabel(_('Saved Schedule'))
-
         self.db = QtSql.QSqlDatabase.addDatabase("QSQLITE")
-        self.db.setDatabaseName("schedule.db")
+        self.db.setDatabaseName("/tmp/schedule.db")
+        self.db.open()
         self.model = QtSql.QSqlTableModel(self.win.send_grid, self.db)
-        self.initializeModel(self.model)
-        view = self.createView(self.model)
-
+        self.initialize_model(self.model)
+        self.view = self.create_view(self.model)
+        self.db.close()
+        QtSql.QSqlDatabase.removeDatabase(self.db.connectionName())
         self.win.send_grid.addWidget(self.label_request, 8, 0)
-        self.win.send_grid.addWidget(view, 9, 0, 1, 6)
+        self.win.send_grid.addWidget(self.view, 9, 0, 1, 6)
 
     def read_send_tab(self):
         if self.instant_r.isChecked():
@@ -89,6 +100,7 @@ class Plugin(BasePlugin):
 
     def do_schedule(self):
         r = self.win.read_send_tab()
+        print r[0], r[1], r[2]
         if not r:
             return
 
@@ -103,26 +115,74 @@ class Plugin(BasePlugin):
         fee = self.win.fee_e.get_amount()
         addr = self.win.payto_e.get_outputs()[0][1]
 
-        self.conn = sqlite3.connect('schedule.db')
-        c = self.conn.cursor()
+        conn = sqlite3.connect('/tmp/schedule.db')
+        c = conn.cursor()
         #c.execute("DROP TABLE IF EXISTS list;")
-        c.execute("CREATE TABLE IF NOT EXISTS list (timestamp, amount, fee, address);")
+        c.execute("CREATE TABLE IF NOT EXISTS list (timestamp INTEGER, amount REAL, fee REAL, address TEXT);")
         c.execute("INSERT INTO list VALUES (?, ?, ?, ?);", (time, amount, fee, addr))
-        self.conn.commit()
-        self.conn.close()
+        conn.commit()
+        conn.close()
+        self.label_request.hide()
+        self.view.hide()
+        self.add_schedule_table()
 
-    def initializeModel(self, model):
+    def worker(self):
+        conn = sqlite3.connect('/tmp/schedule.db')
+        c = conn.cursor()
+        n = c.execute("SELECT count(*);")
+        while n:
+            for row in c.execute('SELECT * FROM list'):
+                if row[0] < time.time():
+                    self.do_send(row[1], row[2], row[3])
+                    pass
+            time.sleep(5)
+        conn.commit()
+        conn.close()
+
+    def do_send(self, amount, fee, addr):
+        outputs = ('address', str(addr), amount)
+        label = ''
+        coins = self.win.get_coins()
+        print outputs, label, fee, coins
+        '''try:
+            tx = self.wallet.make_unsigned_transaction(outputs, fee, None, coins = coins)
+            tx.error = None
+        except Exception as e:
+            traceback.print_exc(file=sys.stdout)
+            self.win.show_message(str(e))
+            return
+
+        if tx.requires_fee(self.wallet.verifier) and tx.get_fee() < MIN_RELAY_TX_FEE:
+            QMessageBox.warning(self, _('Error'), _("This transaction requires a higher fee, or it will not be propagated by the network."), _('OK'))
+            return
+
+        if not self.win.config.get('can_edit_fees', False):
+            if not self.win.question(_("A fee of %(fee)s will be added to this transaction.\nProceed?")%{ 'fee' : self.win.format_amount(fee) + ' '+ self.win.base_unit()}):
+                return
+        else:
+            confirm_fee = self.win.config.get('confirm_fee', 100000)
+            if fee >= confirm_fee:
+                if not self.win.question(_("The fee for this transaction seems unusually high.\nAre you really sure you want to pay %(fee)s in fees?")%{ 'fee' : self.win.format_amount(fee) + ' '+ self.win.base_unit()}):
+                    return
+
+        self.send_tx(tx, label)'''
+
+
+    def initialize_model(self, model):
         model.setTable("list")
         model.setEditStrategy(QtSql.QSqlTableModel.OnManualSubmit)
         model.select()
-        model.setHeaderData(0, Qt.Horizontal, "Date")
-        model.setHeaderData(1, Qt.Horizontal, "Amount")
-        model.setHeaderData(2, Qt.Horizontal, "Fee")
+        model.setHeaderData(0, Qt.Horizontal, "Date (Timestamp)")
+        model.setHeaderData(1, Qt.Horizontal, "Amount (Satoshis)")
+        model.setHeaderData(2, Qt.Horizontal, "Fee  (Satoshis)")
         model.setHeaderData(3, Qt.Horizontal, "Address")
 
-    def createView(self, model):
+    def create_view(self, model):
         view = QTableView()
         view.setModel(model)
-        view.show()
+        view.setColumnWidth(0, 170)
+        view.setColumnWidth(1, 150)
+        view.setColumnWidth(2, 150)
+        view.horizontalHeader().setStretchLastSection(True)
         return view
 
