@@ -26,12 +26,8 @@ class Plugin(BasePlugin):
         self.win.send_grid.itemAtPosition(6, 2).widget().hide()
         self.add_time_edit()
         self.add_schedule_widget()
-       # self.update_schedule_widget()
+        self.update_schedule_widget()
         self.win.update_status()
-
-    @hook
-    def load_wallet(self, wallet):
-        self.wallet = wallet
 
     def close(self):
         self.lable_time.hide()
@@ -112,7 +108,7 @@ class Plugin(BasePlugin):
         self.schedule_requests = self.wallet.storage.get('schedule_requests',{}) 
         self.schedule_requests[time] = (amount, fee, addr)
         self.wallet.storage.put('schedule_requests', self.schedule_requests)
-        #self.update_schedule_widget()
+        self.update_schedule_widget()
 
     def schedule_list_menu(self, position):
         item = self.schedule_list.itemAt(position)
@@ -121,14 +117,13 @@ class Plugin(BasePlugin):
         menu.exec_(self.schedule_list.viewport().mapToGlobal(position))
 
     def update_schedule_widget(self):
-        self.schedule_requests = self.wallet.storage.get('schedule_requests',{}) 
         b = len(self.schedule_requests) > 0
-        #self.win.send_grid.label_request.setVisible(b)
-        #self.win.send_grid.schedule_list.setVisible(b)
+        self.schedule_list.setVisible(b)
 
+        self.schedule_list.clear()
         for time, v in self.schedule_requests.items():
             amount, fee, addr = v
-            item = QTreeWidgetItem( [ time, self.format_amount(amount) if amount else ""], fee, addr)
+            item = QTreeWidgetItem( [ time, self.win.format_amount(amount) if amount else "", self.win.format_amount(fee) if amount else "", addr])
             item.setFont(0, QFont(MONOSPACE_FONT))
             self.schedule_list.addTopLevelItem(item)
 
