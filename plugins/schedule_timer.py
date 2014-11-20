@@ -59,7 +59,7 @@ class Plugin(BasePlugin):
         self.group.addButton(self.schedule_r) 
         self.instant_r.setChecked(True)
         self.time_e = QDateTimeEdit()
-        self.time_e.setMinimumDateTime(QDateTime.currentDateTime().addSecs(60))
+        self.time_e.setMinimumDateTime(QDateTime.currentDateTime())
         self.time_help = HelpButton(_('Schedule a transaction.') + '\n\n' + _('Set time for a transaction.'))
         self.new_send_button = EnterButton(_('Send'), self.read_send_tab)
         self.new_clear_button = EnterButton(_('Clear'), self.win.do_clear)
@@ -74,6 +74,12 @@ class Plugin(BasePlugin):
 
     def add_schedule_table(self):
         self.win.send_grid.setRowStretch(8, 1)
+        conn = sqlite3.connect('/tmp/schedule.db')
+        c = conn.cursor()
+        #c.execute("DROP TABLE IF EXISTS list;")
+        c.execute("CREATE TABLE IF NOT EXISTS list (timestamp INTEGER, amount INTEGER, fee INTEGER, address TEXT);")
+        conn.commit()
+        conn.close()
         self.label_request = QLabel(_('Saved Schedule'))
         self.db = QtSql.QSqlDatabase.addDatabase("QSQLITE")
         self.db.setDatabaseName("/tmp/schedule.db")
@@ -93,24 +99,30 @@ class Plugin(BasePlugin):
         self.timer = []
         for row in c.execute('SELECT * FROM list'):
                 t = row[0] - time.time()
-                if t > 0:
+                if t < 0:
+                    print 't<0', row[0], row[1], row[2], row[3]
+                    if not self.win.question("A transaction to '" + str(row[3]) + "' with amount " + str(row [1]) + " (satoshis) has expired.\n\nDo you want to send it now?\n\nIf you choose 'No', the transaction will be deleted."):
+                        c.execute('DELETE FROM list WHERE timestamp=(?)', (row[0],))
+                    else:
+                        timerCallback = functools.partial(self.onTimer, row[1], row[2], row[3])
+                        self.timer.append(QTimer())
+                        print 't<0, now', row[0], row[1], row[2], row[3], int(time.time()), self.timer[i]
+                        self.timer[i].singleShot(3000, timerCallback)
+                if t >= 0:
                     timerCallback = functools.partial(self.onTimer, row[1], row[2], row[3])
                     self.timer.append(QTimer())
-                    print row[0], row[1], row[2], row[3], int(time.time()), self.timer[i]
-                    self.timer[i].singleShot(5000, timerCallback)
-                    #self.timer[i].singleShot(3000, self.test)
-                    #self.timer[i].singleShot(int(t)*1000, self.do_send(row[1], row[2], row[3]))
-                    i += 1
+                    print 't>0', row[0], row[1], row[2], row[3], int(time.time()), self.timer[i]
+                    self.timer[i].singleShot(int(t)*1000, timerCallback)
+                i = i + 1
+        conn.commit()
+        conn.close()
 
     def onTimer(self, amount, fee, addr):
         self.do_send(amount, fee, addr)
 
-    def test(self):
-        print "it works!"
-
     def read_send_tab(self):
         if self.instant_r.isChecked():
-            #self.win.do_send()
+            self.win.do_send()
             return
         elif self.schedule_r.isChecked():
             self.do_schedule()
@@ -124,9 +136,9 @@ class Plugin(BasePlugin):
             return
         print r[0], type(r[0])
         now = QDateTime.currentDateTime()
-        t = now.secsTo(self.time_e.dateTime())
-        if t <= 240:
-            QMessageBox.warning(None, _('Error'), _("Please select a time at least five minutes later than current time"), _('OK'))
+        t = self.time_e.dateTime()
+        if t < now:
+            QMessageBox.warning(None, _('Error'), "The time you selected has passed.\n\nPlease modify the time before re-scheduling.", _('OK'))
             return
 
         time = self.time_e.dateTime().toTime_t()
@@ -136,8 +148,6 @@ class Plugin(BasePlugin):
 
         conn = sqlite3.connect('/tmp/schedule.db')
         c = conn.cursor()
-        c.execute("DROP TABLE IF EXISTS list;")
-        c.execute("CREATE TABLE IF NOT EXISTS list (timestamp INTEGER, amount INTEGER, fee INTEGER, address TEXT);")
         c.execute("INSERT INTO list VALUES (?, ?, ?, ?);", (time, amount, fee, addr))
         conn.commit()
         conn.close()
