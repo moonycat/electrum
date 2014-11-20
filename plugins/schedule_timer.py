@@ -4,10 +4,11 @@ from PyQt4 import QtSql
 
 from electrum.i18n import _, set_language
 from electrum import SimpleConfig, Transaction
+from electrum.bitcoin import MIN_RELAY_TX_FEE
 from electrum.plugins import BasePlugin, hook
 from gui.qt.util import HelpButton, EnterButton
 
-import sqlite3, time
+import sqlite3, time, functools
 import sys, traceback
 
 class Plugin(BasePlugin):
@@ -89,14 +90,23 @@ class Plugin(BasePlugin):
         conn = sqlite3.connect('/tmp/schedule.db')
         c = conn.cursor()
         i = 0
-        self.time = []
+        self.timer = []
         for row in c.execute('SELECT * FROM list'):
                 t = row[0] - time.time()
-                self.time.append(QTimer())
-                if t > 0:    
-                    self.time[i].singleShot(t, self.do_send(row[1], row[2], row[3]))
-                    print row[0], time.time(), t
-                i += 1
+                if t > 0:
+                    timerCallback = functools.partial(self.onTimer, row[1], row[2], row[3])
+                    self.timer.append(QTimer())
+                    print row[0], row[1], row[2], row[3], int(time.time()), self.timer[i]
+                    self.timer[i].singleShot(5000, timerCallback)
+                    #self.timer[i].singleShot(3000, self.test)
+                    #self.timer[i].singleShot(int(t)*1000, self.do_send(row[1], row[2], row[3]))
+                    i += 1
+
+    def onTimer(self, amount, fee, addr):
+        self.do_send(amount, fee, addr)
+
+    def test(self):
+        print "it works!"
 
     def read_send_tab(self):
         if self.instant_r.isChecked():
@@ -112,7 +122,7 @@ class Plugin(BasePlugin):
         r = self.win.read_send_tab()
         if not r:
             return
-
+        print r[0], type(r[0])
         now = QDateTime.currentDateTime()
         t = now.secsTo(self.time_e.dateTime())
         if t <= 240:
@@ -126,7 +136,7 @@ class Plugin(BasePlugin):
 
         conn = sqlite3.connect('/tmp/schedule.db')
         c = conn.cursor()
-        #c.execute("DROP TABLE IF EXISTS list;")
+        c.execute("DROP TABLE IF EXISTS list;")
         c.execute("CREATE TABLE IF NOT EXISTS list (timestamp INTEGER, amount INTEGER, fee INTEGER, address TEXT);")
         c.execute("INSERT INTO list VALUES (?, ?, ?, ?);", (time, amount, fee, addr))
         conn.commit()
@@ -137,10 +147,10 @@ class Plugin(BasePlugin):
         self.check_schedule()
 
     def do_send(self, amount, fee, addr):
-        outputs = ('address', str(addr), amount)
+        outputs = [('address', str(addr), amount)]
         label = ''
         coins = self.win.get_coins()
-        #print outputs, label, fee
+        print outputs, label, fee
         try:
             tx = self.wallet.make_unsigned_transaction(outputs, fee, None, coins = coins)
             tx.error = None
@@ -154,7 +164,7 @@ class Plugin(BasePlugin):
             return
 
         if not self.config.get('can_edit_fees', False):
-            if not self.question(_("A fee of %(fee)s will be added to this transaction.\nProceed?")%{ 'fee' : self.win.format_amount(fee) + ' '+ self.win.base_unit()}):
+            if not self.win.question(_("A fee of %(fee)s will be added to this transaction.\nProceed?")%{ 'fee' : self.win.format_amount(fee) + ' '+ self.win.base_unit()}):
                 return
         else:
             confirm_fee = self.config.get('confirm_fee', 100000)
