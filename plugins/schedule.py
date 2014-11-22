@@ -77,7 +77,7 @@ class Plugin(BasePlugin):
 
         conn = sqlite3.connect('/tmp/schedule.db')
         c = conn.cursor()
-        c.execute("CREATE TABLE IF NOT EXISTS list (n INTEGER PRIMARY KEY, timestamp INTEGER, datetime TEXT, amount INTEGER, fee INTEGER, address TEXT);")
+        c.execute("CREATE TABLE IF NOT EXISTS list (n INTEGER PRIMARY KEY, timestamp INTEGER, datetime TEXT, amount INTEGER, fee INTEGER, label TEXT, address TEXT);")
         conn.commit()
         conn.close()
 
@@ -103,19 +103,20 @@ class Plugin(BasePlugin):
         for row in list(c.execute('SELECT * FROM list')):
                 t = row[1] - time.time()
                 if t < 0:
-                    if not self.win.question("A transaction to '" + str(row[5]) + "' with amount " + str(row [3]) + " (satoshis) has expired.\n\nDo you want to send it now?\n\nIf you choose 'No', the transaction will be deleted."):
+                    if not self.win.question("A transaction to'" + str(row[6]) + "' with amount " + str(row [3]) + " (satoshis) has expired.\n\nDo you want to send it now?\n\nIf you choose 'No', the transaction will be deleted from database."):
                         c.execute('DELETE FROM list WHERE n=(?)', (row[0],))
                     else:
                         self.timer.append(QTimer())
-                        timerCallback = functools.partial(self.onTimer, row[1], row[3], row[4], row[5])
+                        timerCallback = functools.partial(self.onTimer, row[1], row[3], row[4], row[5], row[6])
                         self.timer[self.i].singleShot(60000, timerCallback)
                         self.i = self.i + 1
+                        #print len(self.timer), self.i
                 else:
                     self.timer.append(QTimer())
-                    timerCallback = functools.partial(self.onTimer, row[1], row[3], row[4], row[5])
+                    timerCallback = functools.partial(self.onTimer, row[1], row[3], row[4], row[5], row[6])
                     self.timer[self.i].singleShot(int(t)*1000, timerCallback)
-                    print len(self.timer), t, self.i
                     self.i = self.i + 1
+                    #print len(self.timer), self.i
 
         conn.commit()
         conn.close()
@@ -123,8 +124,8 @@ class Plugin(BasePlugin):
         self.view.hide()
         self.add_schedule_table()
 
-    def onTimer(self, n, amount, fee, addr):
-        self.do_send(n, amount, fee, addr)
+    def onTimer(self, n, amount, fee, label, addr):
+        self.do_send(n, amount, fee, label, addr)
 
     def read_send_tab(self):
         if self.instant_r.isChecked():
@@ -151,27 +152,27 @@ class Plugin(BasePlugin):
         time_datetime = t.toPyDateTime().strftime("%Y-%m-%d %H:%M:%S")
         amount = self.win.amount_e.get_amount()
         fee = self.win.fee_e.get_amount()
+        label = unicode( self.win.message_e.text() )
         addr = self.win.payto_e.get_outputs()[0][1]
 
         conn = sqlite3.connect('/tmp/schedule.db')
         c = conn.cursor()
-        c.execute("INSERT INTO list VALUES (?, ?, ?, ?, ?, ?);", (None, time_stamp, time_datetime, amount, fee, addr))
+        c.execute("INSERT INTO list VALUES (?, ?, ?, ?, ?, ?, ?);", (None, time_stamp, time_datetime, amount, fee, label, addr))
         conn.commit()
         conn.close()
 
         self.timer.append(QTimer())
-        timerCallback = functools.partial(self.onTimer, time_stamp, amount, fee, addr)
+        timerCallback = functools.partial(self.onTimer, time_stamp, amount, fee, label, addr)
         time_sec = time_stamp- time.time()
         self.timer[self.i].singleShot(int(time_sec)*1000, timerCallback)
         self.i = self.i + 1
-
+        #print len(self.timer), self.i
         self.label_request.hide()
         self.view.hide()
         self.add_schedule_table()
 
-    def do_send(self, time_stamp, amount, fee, addr):
+    def do_send(self, time_stamp, amount, fee, label, addr):
         outputs = [('address', str(addr), amount)]
-        label = ''
         coins = self.win.get_coins()
 
         try:
@@ -215,15 +216,17 @@ class Plugin(BasePlugin):
         model.setHeaderData(2, Qt.Horizontal, "Date")
         model.setHeaderData(3, Qt.Horizontal, "Amount (Satoshis)")
         model.setHeaderData(4, Qt.Horizontal, "Fee (Satoshis)")
-        model.setHeaderData(5, Qt.Horizontal, "Address")
+        model.setHeaderData(5, Qt.Horizontal, "Label")
+        model.setHeaderData(6, Qt.Horizontal, "Address")
 
     def create_view(self, model):
         view = QTableView()
         view.setModel(model)
         view.hideColumn(0)
         view.hideColumn(1)
-        view.setColumnWidth(2, 170)
-        view.setColumnWidth(3, 150)
-        view.setColumnWidth(4, 150)
+        view.setColumnWidth(2, 150)
+        view.setColumnWidth(3, 130)
+        view.setColumnWidth(4, 110)
+        view.setColumnWidth(5, 150)
         view.horizontalHeader().setStretchLastSection(True)
         return view
